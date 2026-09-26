@@ -1,0 +1,8 @@
+{
+  "versionCode": 3,
+  "versionName": "2.1",
+  "title": "Bodo Calendar v2.1",
+  "releaseNotes": "Current stable release. Automatic update checking is enabled.",
+  "apkUrl": "https://github.com/Swrang120/Bodo_Calendar-/raw/refs/heads/main/app-debug.apk",
+  "forceUpdate": false
+}
