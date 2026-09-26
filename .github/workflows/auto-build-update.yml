@@ -1,0 +1,133 @@
+name: Bodo Calendar Auto Build & Update
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Build even if the source repository has not changed'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout update repository
+        uses: actions/checkout@v6
+
+      - name: Check source repository
+        id: source
+        run: |
+          git clone --depth 1 https://github.com/Swrang120/Bodo_Calendar-.git source
+          SOURCE_SHA=$(git -C source rev-parse HEAD)
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Source commit: $SOURCE_SHA"
+          if [ -f source_commit.txt ]; then
+            LAST_SHA=$(cat source_commit.txt)
+          else
+            LAST_SHA=''
+          fi
+          if [ "$SOURCE_SHA" = "$LAST_SHA" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Stop when there is no new source
+        if: steps.source.outputs.changed != 'true'
+        run: echo 'No new Bodo Calendar source commit.'
+
+      - name: Setup Java
+        if: steps.source.outputs.changed == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        if: steps.source.outputs.changed == 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Prepare source and version
+        if: steps.source.outputs.changed == 'true'
+        working-directory: source
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          root = Path('..')
+          manifest_path = root / 'version.json'
+          data = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {"versionCode": 3, "versionName": "2.1"}
+          code = int(data.get('versionCode', 3)) + 1
+          name = str(data.get('versionName', '2.1'))
+          parts = name.split('.')
+          if len(parts) >= 2 and parts[-1].isdigit():
+              name = '.'.join(parts[:-1] + [str(int(parts[-1]) + 1)])
+          else:
+              name = name + '.1'
+
+          gradle = Path('app/build.gradle.kts')
+          text = gradle.read_text(encoding='utf-8')
+          text = re.sub(r'versionCode\s*=\s*\d+', f'versionCode = {code}', text, count=1)
+          text = re.sub(r'versionName\s*=\s*"[^"]+"', f'versionName = "{name}"', text, count=1)
+          gradle.write_text(text, encoding='utf-8')
+
+          # Ensure the update checker points to this dedicated repository.
+          update_file = Path('app/src/main/java/com/example/data/AppUpdateManager.kt')
+          if update_file.exists():
+              text = update_file.read_text(encoding='utf-8')
+              text = text.replace('https://swrang120.github.io/Bodo_Calendar-/version.json', 'https://raw.githubusercontent.com/Swrang120/Bodo-Calendar-App/main/version.json')
+              update_file.write_text(text, encoding='utf-8')
+
+          data.update({
+              'versionCode': code,
+              'versionName': name,
+              'title': f'Bodo Calendar v{name}',
+              'releaseNotes': f'Automatic update from source commit {"${{ steps.source.outputs.sha }}"[:7]}.',
+              'apkUrl': 'https://raw.githubusercontent.com/Swrang120/Bodo-Calendar-App/main/app-debug.apk',
+              'forceUpdate': False
+          })
+          manifest_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          print(f'Building Bodo Calendar {name} (versionCode {code})')
+          PY
+
+          # The existing project expects this debug keystore at the project root.
+          if [ ! -f debug.keystore ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
+          fi
+
+      - name: Build APK
+        if: steps.source.outputs.changed == 'true'
+        working-directory: source
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Publish APK and manifest
+        if: steps.source.outputs.changed == 'true'
+        run: |
+          cp source/app/build/outputs/apk/debug/app-debug.apk ./app-debug.apk
+          cp source_commit.txt source_commit.txt.bak 2>/dev/null || true
+          echo '${{ steps.source.outputs.sha }}' > source_commit.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app-debug.apk version.json source_commit.txt
+          git commit -m "Auto-build Bodo Calendar update"
+          git push
+
+      - name: Upload APK artifact
+        if: steps.source.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bodo-calendar-apk-${{ steps.source.outputs.sha }}
+          path: app-debug.apk
+          compression-level: 0
+          retention-days: 30
