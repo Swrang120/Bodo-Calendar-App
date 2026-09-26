@@ -1,0 +1,42 @@
+name: Validate Update Manifest
+
+on:
+  push:
+    paths:
+      - version.json
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate version.json
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("version.json").read_text(encoding="utf-8"))
+
+          required = ["versionCode", "versionName", "title", "releaseNotes", "apkUrl", "forceUpdate"]
+          missing = [key for key in required if key not in data]
+          if missing:
+              raise SystemExit(f"Missing fields: {missing}")
+
+          if not isinstance(data["versionCode"], int):
+              raise SystemExit("versionCode must be an integer")
+
+          if data["versionCode"] < 1:
+              raise SystemExit("versionCode must be >= 1")
+
+          if not isinstance(data["forceUpdate"], bool):
+              raise SystemExit("forceUpdate must be true or false")
+
+          if not str(data["apkUrl"]).startswith(("https://", "http://")):
+              raise SystemExit("apkUrl must be an HTTP(S) URL")
+
+          print(f"Validated Bodo Calendar {data['versionName']} (code {data['versionCode']})")
+          PY
