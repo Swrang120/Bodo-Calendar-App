@@ -1,6 +1,9 @@
 name: Bodo Calendar Auto Build & Update
 
 on:
+  push:
+    paths:
+      - '.github/workflows/auto-build-update.yml'
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
