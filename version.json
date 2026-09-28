@@ -1,8 +1,8 @@
 {
-  "versionCode": 6,
-  "versionName": "2.4",
-  "title": "Bodo Calendar v2.4",
-  "releaseNotes": "Automatic update from source commit 9bee620.",
+  "versionCode": 7,
+  "versionName": "2.5",
+  "title": "Bodo Calendar v2.5",
+  "releaseNotes": "Automatic update from source commit cf0863a.",
   "apkUrl": "https://raw.githubusercontent.com/Swrang120/Bodo-Calendar-App/main/app-debug.apk",
   "forceUpdate": false
 }
